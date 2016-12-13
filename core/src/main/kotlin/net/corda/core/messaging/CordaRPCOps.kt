@@ -2,6 +2,7 @@ package net.corda.core.messaging
 
 import net.corda.core.contracts.ContractState
 import net.corda.core.contracts.StateAndRef
+import net.corda.core.contracts.UpgradedContract
 import net.corda.core.crypto.CompositeKey
 import net.corda.core.crypto.Party
 import net.corda.core.crypto.SecureHash
@@ -26,6 +27,7 @@ sealed class StateMachineUpdate(val id: StateMachineRunId) {
     class Added(val stateMachineInfo: StateMachineInfo) : StateMachineUpdate(stateMachineInfo.id) {
         override fun toString() = "Added($id, ${stateMachineInfo.flowLogicClassName})"
     }
+
     class Removed(id: StateMachineRunId) : StateMachineUpdate(id) {
         override fun toString() = "Removed($id)"
     }
@@ -105,6 +107,11 @@ interface CordaRPCOps : RPCOps {
     @Suppress("DEPRECATION")
     @Deprecated("This service will be removed in a future milestone")
     fun uploadFile(dataType: String, name: String?, file: InputStream): String
+
+    /**
+     * Authorise a contract upgrade for a contract state.
+     */
+    fun authoriseContractUpgrade(state: StateAndRef<*>, upgrade: UpgradedContract<*, *>)
 
     /**
      * Returns the node-local current time.

@@ -6,8 +6,7 @@ import net.corda.core.crypto.CompositeKey
 import net.corda.core.crypto.Party
 import net.corda.core.transactions.SignedTransaction
 import net.corda.core.transactions.TransactionBuilder
-import net.corda.core.utilities.ProgressTracker
-import net.corda.core.utilities.UntrustworthyData
+import net.corda.flows.AbstractStateReplacementFlow.Proposal
 import net.corda.flows.ContractUpgradeFlow.Acceptor
 import net.corda.flows.ContractUpgradeFlow.Instigator
 
@@ -19,56 +18,42 @@ import net.corda.flows.ContractUpgradeFlow.Instigator
  * Finally, [Instigator] sends the transaction containing all signatures back to each participant so they can record it and
  * use the new updated state for future transactions.
  */
-object ContractUpgradeFlow : AbstractStateReplacementFlow<UpgradedContract<*>>() {
-    val TOPIC = "platform.contract_upgrade"
-
-    data class Proposal<S : ContractState>(override val stateRef: StateRef,
-                                           override val modification: UpgradedContract<S>,
-                                           override val stx: SignedTransaction) : AbstractStateReplacementFlow.Proposal<UpgradedContract<S>>
-
-    internal fun <T : ContractState> assembleBareTx(stateRef: StateAndRef<T>,
-                                                    newContract: UpgradedContract<T>): TransactionBuilder {
-        return TransactionType.General.Builder(stateRef.state.notary).withItems(stateRef, newContract.upgrade(stateRef.state.data))
-    }
-
-    class Instigator<S : ContractState>(originalState: StateAndRef<S>,
-                                        newContract: UpgradedContract<S>,
-                                        progressTracker: ProgressTracker = tracker())
-    : AbstractStateReplacementFlow.Instigator<S, UpgradedContract<S>>(originalState, newContract, progressTracker) {
-        override fun assembleProposal(stateRef: StateRef, modification: UpgradedContract<S>, stx: SignedTransaction)
-                = Proposal<S>(stateRef, modification, stx)
-
-        override fun assembleTx(): Pair<SignedTransaction, List<CompositeKey>> {
-            val ptx = assembleBareTx(originalState, modification)
-            ptx.signWith(serviceHub.legalIdentityKey)
-            return Pair(ptx.toSignedTransaction(false), originalState.state.data.participants)
+object ContractUpgradeFlow {
+    private fun <OldState : ContractState, NewState : ContractState> assembleBareTx(stateRef: StateAndRef<OldState>,
+                                                                                    contractUpgrade: UpgradedContract<OldState, NewState>): TransactionBuilder {
+        return TransactionType.General.Builder(stateRef.state.notary).apply {
+            withItems(stateRef, contractUpgrade.upgrade(stateRef.state.data), Command(UpgradeCommand(contractUpgrade), stateRef.state.data.participants))
         }
     }
 
-    class Acceptor<T : ContractState>(otherSide: Party,
-                                      val clazz: Class<T>,
-                                      override val progressTracker: ProgressTracker = tracker())
-    : AbstractStateReplacementFlow.Acceptor<UpgradedContract<T>>(otherSide) {
+    class Instigator<OldState : ContractState, NewState : ContractState>(
+            originalState: StateAndRef<OldState>,
+            newContract: UpgradedContract<OldState, NewState>) : AbstractStateReplacementFlow.Instigator<OldState, NewState, UpgradedContract<OldState, NewState>>(originalState, newContract) {
+
+        override fun assembleTx(): Pair<SignedTransaction, Iterable<CompositeKey>> {
+            return assembleBareTx(originalState, modification).let {
+                it.signWith(serviceHub.legalIdentityKey)
+                Pair(it.toSignedTransaction(false), originalState.state.data.participants)
+            }
+        }
+    }
+
+    class Acceptor(otherSide: Party) : AbstractStateReplacementFlow.Acceptor<UpgradedContract<ContractState, ContractState>>(otherSide) {
         @Suspendable
-        override fun verifyProposal(maybeProposal: UntrustworthyData<AbstractStateReplacementFlow.Proposal<UpgradedContract<T>>>): AbstractStateReplacementFlow.Proposal<UpgradedContract<T>> {
-            return maybeProposal.unwrap { proposal ->
-                val states = serviceHub.vaultService.statesForRefs(listOf(proposal.stateRef))
-                val state = states[proposal.stateRef] ?: throw IllegalStateException("We don't have a copy of the referenced state")
-
-                require (state.data.javaClass.equals(clazz))
-
-                @Suppress("unchecked_cast")
-                // We've enforced type safety above, just we can't do it in a way Kotlin recognises
-                val stateAndRef = StateAndRef<T>(state as TransactionState<T>, proposal.stateRef)
-                val upgradeCandidates: Set<UpgradedContract<T>> = serviceHub.vaultService.getUpgradeCandidates<T>(state.data.contract)
-                val actualTx = proposal.stx.tx
-                val expectedTx = assembleBareTx(stateAndRef, proposal.modification).toWireTransaction()
-                requireThat {
-                    "the proposed contract $proposal.contract is a trusted upgrade path" by (proposal.modification in upgradeCandidates)
-                    "the proposed tx matches the expected tx for this upgrade" by (actualTx == expectedTx)
-                }
-
-                proposal
+        @Throws(StateReplacementException::class)
+        override fun verifyProposal(proposal: Proposal<UpgradedContract<ContractState, ContractState>>) {
+            val stx = serviceHub.storageService.validatedTransactions.getTransaction(proposal.stateRef.txhash) ?: throw IllegalStateException("We don't have a copy of the referenced state")
+            val state = stx.tx.outRef<ContractState>(proposal.stateRef.index)
+            val authorisedUpgrade = serviceHub.vaultService.getAuthorisedContractUpgrade(state) ?: throw IllegalStateException("Contract state upgrade is unauthorised. State hash : ${state.ref}")
+            val actualTx = proposal.stx.tx
+            val expectedTx = assembleBareTx(state, proposal.modification).toWireTransaction()
+            requireThat {
+                "the instigator is one of the participants" by (state.state.data.participants.contains(otherSide.owningKey))
+                "the proposed upgrade ${proposal.modification} is a trusted upgrade path" by (proposal.modification.javaClass == authorisedUpgrade.javaClass)
+                "the proposed tx matches the expected tx for this upgrade" by (actualTx == expectedTx)
+                "number of inputs and outputs match" by (proposal.stx.tx.inputs.size == proposal.stx.tx.outputs.size)
+                "input belongs to the legacy contract" by (state.state.data.contract.javaClass == proposal.modification.legacyContract.javaClass)
+                "output belongs to the upgraded contract" by proposal.stx.tx.outputs.all { it.data.contract.javaClass == proposal.modification.javaClass }
             }
         }
     }

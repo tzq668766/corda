@@ -2,6 +2,7 @@ package net.corda.node.internal
 
 import net.corda.core.contracts.ContractState
 import net.corda.core.contracts.StateAndRef
+import net.corda.core.contracts.UpgradedContract
 import net.corda.core.crypto.CompositeKey
 import net.corda.core.crypto.SecureHash
 import net.corda.core.flows.FlowLogic
@@ -103,6 +104,7 @@ class CordaRPCOpsImpl(
 
     override fun attachmentExists(id: SecureHash) = services.storageService.attachments.openAttachment(id) != null
     override fun uploadAttachment(jar: InputStream) = services.storageService.attachments.importAttachment(jar)
+    override fun authoriseContractUpgrade(state: StateAndRef<*>, upgrade: UpgradedContract<*, *>) = services.vaultService.authoriseContractUpgrade(state, upgrade)
     override fun currentNodeTime(): Instant = Instant.now(services.clock)
     override fun uploadFile(dataType: String, name: String?, file: InputStream): String {
         val acceptor = services.storageService.uploaders.firstOrNull { it.accepts(dataType) }

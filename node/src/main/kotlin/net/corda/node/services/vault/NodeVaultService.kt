@@ -1,11 +1,11 @@
 package net.corda.node.services.vault
 
 import com.google.common.collect.Sets
-import com.google.common.util.concurrent.ListenableFuture
 import net.corda.contracts.asset.Cash
 import net.corda.core.ThreadBox
 import net.corda.core.bufferUntilSubscribed
 import net.corda.core.contracts.*
+import net.corda.core.contracts.Requirements.by
 import net.corda.core.crypto.CompositeKey
 import net.corda.core.crypto.Party
 import net.corda.core.crypto.SecureHash
@@ -345,26 +345,21 @@ class NodeVaultService(private val services: ServiceHub) : SingletonSerializeAsT
         return Vault.Update(consumedStates, ourNewStates.toHashSet())
     }
 
-    private fun isRelevant(state: ContractState, ourKeys: Set<PublicKey>): Boolean {
-        return if (state is OwnableState) {
-            state.owner.containsAny(ourKeys)
-        } else if (state is LinearState) {
-            // It's potentially of interest to the vault
-            state.isRelevant(ourKeys)
-        } else {
-            false
-        }
+    // TODO : Persists this in DB.
+    private val authorisedUpgrade = mutableMapOf<StateAndRef<*>, UpgradedContract<*, *>>()
+
+    override fun getAuthorisedContractUpgrade(stateAndRef: StateAndRef<*>) = authorisedUpgrade[stateAndRef]
+
+    @Suppress("UNCHECKED_CAST")
+    override fun authoriseContractUpgrade(stateAndRef: StateAndRef<*>, upgrade: UpgradedContract<*, *>) {
+        "The upgraded contract is an upgrade of the contract state's contract." by (upgrade.legacyContract.javaClass == stateAndRef.state.data.contract.javaClass)
+        authorisedUpgrade.put(stateAndRef, upgrade)
     }
 
-    override fun <T : ContractState> getUpgradeCandidates(old: Contract): Set<UpgradedContract<T>> {
-        // TODO: Add some rules here - likely user configured values as a start
-        // TODO: Either here or somewhere else, make sure there's a process for blocking upgrades until dependent contracts
-        //       have all been updated. For example obligations to pay cash must be updated before cash is updated.
-        return emptySet()
-    }
-
-    override fun <T : ContractState> upgradeContracts(refs: List<StateAndRef<T>>, new: UpgradedContract<T>): List<ListenableFuture<*>> {
-        // refs.map { ref -> smm.add(ContractUpgradeProtocol.Instigator(ref, new)) }.toList()
-        return emptyList()
+    private fun isRelevant(state: ContractState, ourKeys: Set<PublicKey>) = when (state) {
+        is OwnableState -> state.owner.containsAny(ourKeys)
+    // It's potentially of interest to the vault
+        is LinearState -> state.isRelevant(ourKeys)
+        else -> false
     }
 }

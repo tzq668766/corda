@@ -146,7 +146,7 @@ interface VaultService {
 
     fun statesForRefs(refs: List<StateRef>): Map<StateRef, TransactionState<*>?> {
         val refsToStates = currentVault.states.associateBy { it.ref }
-        return refs.associateBy({ it }, { refsToStates[it]?.state })
+        return refs.associateBy({ it }) { refsToStates[it]?.state }
     }
 
     /**
@@ -169,9 +169,10 @@ interface VaultService {
 
     /** Get contracts we would be willing to upgrade the suggested contract to. */
     // TODO: We need a better place to put business logic functions
-    fun <T : ContractState> getUpgradeCandidates(old: Contract): Set<UpgradedContract<T>>
+    fun getAuthorisedContractUpgrade(stateAndRef: StateAndRef<*>): UpgradedContract<*, *>?
+
     /** Attempt to upgrade the given contract to a newer version. */
-    fun <T: ContractState> upgradeContracts(refs: List<StateAndRef<T>>, new: UpgradedContract<T>): List<ListenableFuture<*>>
+    fun authoriseContractUpgrade(stateAndRef: StateAndRef<*>, upgrade: UpgradedContract<*, *>)
 
     /**
      *  Add a note to an existing [LedgerTransaction] given by its unique [SecureHash] id
