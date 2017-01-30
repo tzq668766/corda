@@ -19,8 +19,8 @@ import net.corda.core.random63BitValue
 import net.corda.core.rootCause
 import net.corda.core.serialization.OpaqueBytes
 import net.corda.core.serialization.deserialize
-import net.corda.flows.CashCommand
-import net.corda.flows.CashFlow
+import net.corda.flows.CashIssueFlow
+import net.corda.flows.CashPaymentFlow
 import net.corda.flows.NotaryFlow
 import net.corda.node.services.persistence.checkpoints
 import net.corda.node.services.transactions.ValidatingNotaryService
@@ -314,16 +314,16 @@ class StateMachineManagerTests {
     @Test
     fun `different notaries are picked when addressing shared notary identity`() {
         assertEquals(notary1.info.notaryIdentity, notary2.info.notaryIdentity)
-        node1.services.startFlow(CashFlow(CashCommand.IssueCash(
+        node1.services.startFlow(CashIssueFlow(
                 DOLLARS(2000),
                 OpaqueBytes.of(0x01),
                 node1.info.legalIdentity,
-                notary1.info.notaryIdentity)))
+                notary1.info.notaryIdentity))
         // We pay a couple of times, the notary picking should go round robin
         for (i in 1 .. 3) {
-            node1.services.startFlow(CashFlow(CashCommand.PayCash(
+            node1.services.startFlow(CashPaymentFlow(
                     DOLLARS(500).issuedBy(node1.info.legalIdentity.ref(0x01)),
-                    node2.info.legalIdentity)))
+                    node2.info.legalIdentity))
             net.runNetwork()
         }
         val endpoint = net.messagingNetwork.endpoint(notary1.net.myAddress as InMemoryMessagingNetwork.PeerHandle)!!

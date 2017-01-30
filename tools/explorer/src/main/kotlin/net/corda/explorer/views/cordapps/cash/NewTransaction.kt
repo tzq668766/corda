@@ -29,7 +29,6 @@ import net.corda.explorer.model.ReportingCurrencyModel
 import net.corda.explorer.views.bigDecimalFormatter
 import net.corda.explorer.views.byteFormatter
 import net.corda.explorer.views.stringConverter
-import net.corda.flows.CashCommand
 import net.corda.flows.CashFlow
 import net.corda.flows.IssuerFlow.IssuanceRequester
 import org.controlsfx.dialog.ExceptionDialog
@@ -89,7 +88,7 @@ class NewTransaction : Fragment() {
             }
             dialog.show()
             runAsync {
-                val handle = if (it is CashCommand.IssueCash) {
+                val handle = if (it is CashFlow.Command.IssueCash) {
                     myIdentity.value?.let { myIdentity ->
                         rpcProxy.value!!.startFlow(::IssuanceRequester,
                                 it.amount,
@@ -112,9 +111,9 @@ class NewTransaction : Fragment() {
                     Alert.AlertType.ERROR to response.message
                 } else {
                     val type = when (command) {
-                        is CashCommand.IssueCash -> "Cash Issued"
-                        is CashCommand.ExitCash -> "Cash Exited"
-                        is CashCommand.PayCash -> "Cash Paid"
+                        is CashFlow.Command.IssueCash -> "Cash Issued"
+                        is CashFlow.Command.ExitCash -> "Cash Exited"
+                        is CashFlow.Command.PayCash -> "Cash Paid"
                     }
                     Alert.AlertType.INFORMATION to "$type \nTransaction ID : ${(response as SignedTransaction).id}"
                 }
@@ -129,7 +128,7 @@ class NewTransaction : Fragment() {
         }
     }
 
-    private fun dialog(window: Window) = Dialog<CashCommand>().apply {
+    private fun dialog(window: Window) = Dialog<CashFlow.Command>().apply {
         dialogPane = root
         initOwner(window)
         setResultConverter {
@@ -138,10 +137,10 @@ class NewTransaction : Fragment() {
             when (it) {
                 executeButton -> when (transactionTypeCB.value) {
                     CashTransaction.Issue -> {
-                        CashCommand.IssueCash(Amount(amount.value, currencyChoiceBox.value), issueRef, partyBChoiceBox.value.legalIdentity, notaries.first().notaryIdentity)
+                        CashFlow.Command.IssueCash(Amount(amount.value, currencyChoiceBox.value), issueRef, partyBChoiceBox.value.legalIdentity, notaries.first().notaryIdentity)
                     }
-                    CashTransaction.Pay -> CashCommand.PayCash(Amount(amount.value, Issued(PartyAndReference(issuerChoiceBox.value, issueRef), currencyChoiceBox.value)), partyBChoiceBox.value.legalIdentity)
-                    CashTransaction.Exit -> CashCommand.ExitCash(Amount(amount.value, currencyChoiceBox.value), issueRef)
+                    CashTransaction.Pay -> CashFlow.Command.PayCash(Amount(amount.value, Issued(PartyAndReference(issuerChoiceBox.value, issueRef), currencyChoiceBox.value)), partyBChoiceBox.value.legalIdentity)
+                    CashTransaction.Exit -> CashFlow.Command.ExitCash(Amount(amount.value, currencyChoiceBox.value), issueRef)
                     else -> null
                 }
                 else -> null

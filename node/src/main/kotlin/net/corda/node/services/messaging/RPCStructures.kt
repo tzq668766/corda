@@ -28,6 +28,7 @@ import net.corda.core.node.services.*
 import net.corda.core.serialization.*
 import net.corda.core.transactions.SignedTransaction
 import net.corda.core.transactions.WireTransaction
+import net.corda.flows.CashFlow
 import net.corda.node.internal.AbstractNode
 import net.corda.node.services.User
 import net.corda.node.services.messaging.ArtemisMessagingComponent.Companion.NODE_USER
