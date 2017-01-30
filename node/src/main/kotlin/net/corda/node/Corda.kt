@@ -7,14 +7,12 @@ import net.corda.core.utilities.Emoji
 import net.corda.node.internal.Node
 import net.corda.node.services.config.FullNodeConfiguration
 import net.corda.node.utilities.ANSIProgressObserver
-import net.corda.webserver.WebServer
 import org.fusesource.jansi.Ansi
 import org.fusesource.jansi.AnsiConsole
 import org.slf4j.LoggerFactory
 import java.lang.management.ManagementFactory
 import java.net.InetAddress
 import java.nio.file.Paths
-import kotlin.concurrent.thread
 import kotlin.system.exitProcess
 
 private var renderBasicInfoToConsole = true
@@ -89,30 +87,21 @@ fun main(args: Array<String>) {
     try {
         cmdlineOptions.baseDirectory.createDirectories()
 
-        // TODO: Webserver should be split and start from inside a WAR container
-        if  (!cmdlineOptions.isWebserver) {
-            val node = conf.createNode()
-            node.start()
-            printPluginsAndServices(node)
+        val node = conf.createNode()
+        node.start()
+        printPluginsAndServices(node)
 
-            node.networkMapRegistrationFuture.success {
-                val elapsed = (System.currentTimeMillis() - startTime) / 10 / 100.0
-                printBasicNodeInfo("Node started up and registered in $elapsed sec")
-
-                if (renderBasicInfoToConsole)
-                    ANSIProgressObserver(node.smm)
-            } failure {
-                log.error("Error during network map registration", it)
-                exitProcess(1)
-            }
-            node.run()
-        } else {
-            val server = WebServer(conf)
-            server.start()
+        node.networkMapRegistrationFuture.success {
             val elapsed = (System.currentTimeMillis() - startTime) / 10 / 100.0
-            printBasicNodeInfo("Webserver started up in $elapsed sec")
-            server.run()
+            printBasicNodeInfo("Node started up and registered in $elapsed sec")
+
+            if (renderBasicInfoToConsole)
+                ANSIProgressObserver(node.smm)
+        } failure {
+            log.error("Error during network map registration", it)
+            exitProcess(1)
         }
+        node.run()
     } catch (e: Exception) {
         log.error("Exception during node startup", e)
         exitProcess(1)

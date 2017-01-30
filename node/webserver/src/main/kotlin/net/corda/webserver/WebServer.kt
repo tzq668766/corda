@@ -27,7 +27,15 @@ import java.lang.reflect.InvocationTargetException
 import java.net.InetAddress
 import java.util.*
 
-// TODO: Split into a separate module under client that packages into WAR formats.
+
+fun main(args: Array<String>) {
+    //val server = WebServer(conf)
+    //server.start()
+    //val elapsed = (System.currentTimeMillis() - startTime) / 10 / 100.0
+    //printBasicNodeInfo("Webserver started up in $elapsed sec")
+    //server.run()
+}
+
 class WebServer(val config: FullNodeConfiguration) {
     private companion object {
         val log = loggerFor<WebServer>()
