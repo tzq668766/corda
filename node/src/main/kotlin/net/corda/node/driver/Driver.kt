@@ -552,8 +552,7 @@ open class DriverDSL(
                     listOf("-Dname=node-${nodeConf.artemisAddress}-webserver") + debugPortArg +
                     listOf(
                             "-cp", classpath, className,
-                            "--base-directory", nodeConf.baseDirectory.toString(),
-                            "--webserver")
+                            "--base-directory", nodeConf.baseDirectory.toString())
             val builder = ProcessBuilder(javaArgs)
             builder.redirectError(Paths.get("error.$className.log").toFile())
             builder.inheritIO()

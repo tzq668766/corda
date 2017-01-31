@@ -21,7 +21,6 @@ class ArgsParser {
             .withRequiredArg()
             .defaultsTo("node.conf")
     private val logToConsoleArg = optionParser.accepts("log-to-console", "If set, prints logging to the console as well as to a file.")
-    private val isWebserverArg = optionParser.accepts("webserver")
     private val helpArg = optionParser.accepts("help").forHelp()
 
     fun parse(vararg args: String): CmdLineOptions {
@@ -31,14 +30,13 @@ class ArgsParser {
         }
         val baseDirectory = Paths.get(optionSet.valueOf(baseDirectoryArg)).normalize().toAbsolutePath()
         val configFile = baseDirectory / optionSet.valueOf(configFileArg)
-        val isWebserver = optionSet.has(isWebserverArg)
-        return CmdLineOptions(baseDirectory, configFile, optionSet.has(helpArg), optionSet.has(logToConsoleArg), isWebserver)
+        return CmdLineOptions(baseDirectory, configFile, optionSet.has(helpArg), optionSet.has(logToConsoleArg))
     }
 
     fun printHelp(sink: PrintStream) = optionParser.printHelpOn(sink)
 }
 
-data class CmdLineOptions(val baseDirectory: Path, val configFile: Path?, val help: Boolean, val logToConsole: Boolean, val isWebserver: Boolean) {
+data class CmdLineOptions(val baseDirectory: Path, val configFile: Path?, val help: Boolean, val logToConsole: Boolean) {
     fun loadConfig(allowMissingConfig: Boolean = false, configOverrides: Map<String, Any?> = emptyMap()): Config {
         return ConfigHelper.loadConfig(baseDirectory, configFile, allowMissingConfig, configOverrides)
     }
