@@ -66,7 +66,7 @@ import kotlin.reflect.jvm.javaType
  */
 
 // A convenient instance of Kryo pre-configured with some useful things. Used as a default by various functions.
-val THREAD_LOCAL_KRYO = ThreadLocal.withInitial { createKryo() }
+val THREAD_LOCAL_KRYO: ThreadLocal<Kryo> = ThreadLocal.withInitial { createKryo() }
 
 /**
  * A type safe wrapper around a byte array that contains a serialised object. You can call [SerializedBytes.deserialize]
@@ -76,7 +76,7 @@ class SerializedBytes<T : Any>(bytes: ByteArray) : OpaqueBytes(bytes) {
     // It's OK to use lazy here because SerializedBytes is configured to use the ImmutableClassSerializer.
     val hash: SecureHash by lazy { bytes.sha256() }
 
-    fun writeToFile(path: Path) = Files.write(path, bytes)
+    fun writeToFile(path: Path): Path = Files.write(path, bytes)
 }
 
 // Some extension functions that make deserialisation convenient and provide auto-casting of the result.
@@ -385,8 +385,7 @@ object KotlinObjectSerializer : Serializer<DeserializeAsKotlinObjectDef>() {
         return type.getField("INSTANCE").get(null) as DeserializeAsKotlinObjectDef
     }
 
-    override fun write(kryo: Kryo, output: Output, obj: DeserializeAsKotlinObjectDef) {
-    }
+    override fun write(kryo: Kryo, output: Output, obj: DeserializeAsKotlinObjectDef) {}
 }
 
 fun createKryo(k: Kryo = Kryo()): Kryo {
@@ -402,12 +401,10 @@ fun createKryo(k: Kryo = Kryo()): Kryo {
         // Because we like to stick a Kryo object in a ThreadLocal to speed things up a bit, we can end up trying to
         // serialise the Kryo object itself when suspending a fiber. That's dumb, useless AND can cause crashes, so
         // we avoid it here.
-        register(Kryo::class.java, object : Serializer<Kryo>() {
-            override fun read(kryo: Kryo, input: Input, type: Class<Kryo>): Kryo {
-                return createKryo((Fiber.getFiberSerializer() as KryoSerializer).kryo)
-            }
-            override fun write(kryo: Kryo, output: Output, obj: Kryo) {}
-        })
+        register(
+                read = { kryo, input -> createKryo((Fiber.getFiberSerializer() as KryoSerializer).kryo) },
+                write = { kryo, output, obj -> }
+        )
 
         register(EdDSAPublicKey::class.java, Ed25519PublicKeySerializer)
         register(EdDSAPrivateKey::class.java, Ed25519PrivateKeySerializer)
@@ -435,6 +432,8 @@ fun createKryo(k: Kryo = Kryo()): Kryo {
         // This ensures a NonEmptySetSerializer is constructed with an initial value.
         register(NonEmptySet::class.java, NonEmptySetSerializer)
 
+        register<Array<StackTraceElement>>(read = { kryo, input -> emptyArray() }, write = { kryo, output, o -> })
+
         /** This ensures any kotlin objects that implement [DeserializeAsKotlinObjectDef] are read back in as singletons. */
         addDefaultSerializer(DeserializeAsKotlinObjectDef::class.java, KotlinObjectSerializer)
 
@@ -449,6 +448,13 @@ fun createKryo(k: Kryo = Kryo()): Kryo {
 
         noReferencesWithin<WireTransaction>()
     }
+}
+
+inline fun <reified T : Any> Kryo.register(crossinline read: (Kryo, Input) -> T, crossinline write: (Kryo, Output, T) -> Unit) {
+    register(T::class.java, object : Serializer<T>() {
+        override fun read(kryo: Kryo, input: Input, type: Class<T>): T = read(kryo, input)
+        override fun write(kryo: Kryo, output: Output, obj: T) = write(kryo, output, obj)
+    })
 }
 
 /**
@@ -517,7 +523,7 @@ var Kryo.attachmentStorage: AttachmentStorage?
 //Used in Merkle tree calculation. It doesn't cover all the cases of unstable serialization format.
 fun extendKryoHash(kryo: Kryo): Kryo {
     return kryo.apply {
-        setReferences(false)
+        references = false
         register(LinkedHashMap::class.java, MapSerializer())
         register(HashMap::class.java, OrderedSerializer)
     }

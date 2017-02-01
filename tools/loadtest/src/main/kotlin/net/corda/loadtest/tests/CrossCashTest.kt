@@ -7,12 +7,12 @@ import net.corda.core.contracts.Issued
 import net.corda.core.contracts.PartyAndReference
 import net.corda.core.contracts.USD
 import net.corda.core.crypto.Party
+import net.corda.core.flows.FlowException
 import net.corda.core.getOrThrow
 import net.corda.core.messaging.startFlow
 import net.corda.core.serialization.OpaqueBytes
 import net.corda.core.toFuture
 import net.corda.flows.CashCommand
-import net.corda.flows.CashException
 import net.corda.flows.CashFlow
 import net.corda.loadtest.LoadTest
 import net.corda.loadtest.NodeHandle
@@ -210,7 +210,7 @@ val crossCashTest = LoadTest<CrossCashCommand, CrossCashState>(
             try {
                 val result = command.node.connection.proxy.startFlow(::CashFlow, command.command).returnValue.toFuture().getOrThrow()
                 log.info("Success: $result")
-            } catch (e: CashException) {
+            } catch (e: FlowException) {
                 log.error("Failure", e)
             }
         },

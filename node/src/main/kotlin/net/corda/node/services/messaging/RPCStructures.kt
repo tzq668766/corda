@@ -8,9 +8,9 @@ import com.esotericsoftware.kryo.Registration
 import com.esotericsoftware.kryo.Serializer
 import com.esotericsoftware.kryo.io.Input
 import com.esotericsoftware.kryo.io.Output
-import com.esotericsoftware.kryo.serializers.JavaSerializer
 import com.google.common.net.HostAndPort
 import de.javakaffee.kryoserializers.ArraysAsListSerializer
+import de.javakaffee.kryoserializers.UnmodifiableCollectionsSerializer
 import de.javakaffee.kryoserializers.guava.*
 import net.corda.contracts.asset.Cash
 import net.corda.core.ErrorOr
@@ -19,6 +19,7 @@ import net.corda.core.crypto.CompositeKey
 import net.corda.core.crypto.DigitalSignature
 import net.corda.core.crypto.Party
 import net.corda.core.crypto.SecureHash
+import net.corda.core.flows.FlowException
 import net.corda.core.flows.StateMachineRunId
 import net.corda.core.messaging.FlowHandle
 import net.corda.core.messaging.StateMachineInfo
@@ -32,6 +33,7 @@ import net.corda.node.internal.AbstractNode
 import net.corda.node.services.User
 import net.corda.node.services.messaging.ArtemisMessagingComponent.Companion.NODE_USER
 import net.corda.node.services.messaging.ArtemisMessagingComponent.NetworkMapAddress
+import net.corda.node.services.statemachine.FlowSessionException
 import net.i2p.crypto.eddsa.EdDSAPrivateKey
 import net.i2p.crypto.eddsa.EdDSAPublicKey
 import org.apache.activemq.artemis.api.core.SimpleString
@@ -138,6 +140,7 @@ private class RPCKryo(observableSerializer: Serializer<Observable<Any>>? = null)
         register(Array<Any>(0,{}).javaClass)
         register(Class::class.java, ClassSerializer)
 
+        UnmodifiableCollectionsSerializer.registerSerializers(this)
         ImmutableListSerializer.registerSerializers(this)
         ImmutableSetSerializer.registerSerializers(this)
         ImmutableSortedSetSerializer.registerSerializers(this)
@@ -207,15 +210,14 @@ private class RPCKryo(observableSerializer: Serializer<Observable<Any>>? = null)
         register(SimpleString::class.java)
         register(ServiceEntry::class.java)
         // Exceptions. We don't bother sending the stack traces as the client will fill in its own anyway.
+        register<Array<StackTraceElement>>(read = { kryo, input -> emptyArray() }, write = { kryo, output, obj -> })
+        register(FlowException::class.java)
+        register(FlowSessionException::class.java)
         register(RuntimeException::class.java)
         register(IllegalArgumentException::class.java)
         register(ArrayIndexOutOfBoundsException::class.java)
         register(IndexOutOfBoundsException::class.java)
-        // Kryo couldn't serialize Collections.unmodifiableCollection in Throwable correctly, causing null pointer exception when try to access the deserialize object.
-        register(NoSuchElementException::class.java, JavaSerializer())
         register(RPCException::class.java)
-        register(Array<StackTraceElement>::class.java, read = { kryo, input -> emptyArray() }, write = { kryo, output, o -> })
-        register(Collections.unmodifiableList(emptyList<String>()).javaClass)
         register(PermissionException::class.java)
         register(FlowHandle::class.java)
         register(KryoException::class.java)
@@ -227,14 +229,6 @@ private class RPCKryo(observableSerializer: Serializer<Observable<Any>>? = null)
             }
         }
         pluginRegistries.forEach { it.registerRPCKryoTypes(this) }
-    }
-
-    // Helper method, attempt to reduce boiler plate code
-    private fun <T> register(type: Class<T>, read: (Kryo, Input) -> T, write: (Kryo, Output, T) -> Unit) {
-        register(type, object : Serializer<T>() {
-            override fun read(kryo: Kryo, input: Input, type: Class<T>): T = read(kryo, input)
-            override fun write(kryo: Kryo, output: Output, o: T) = write(kryo, output, o)
-        })
     }
 
     // TODO: workaround to prevent Observable registration conflict when using plugin registered kyro classes

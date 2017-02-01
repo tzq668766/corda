@@ -9,6 +9,7 @@ import com.google.common.annotations.VisibleForTesting
 import com.google.common.collect.HashMultimap
 import net.corda.core.ErrorOr
 import net.corda.core.crypto.commonName
+import net.corda.core.flows.FlowException
 import net.corda.core.messaging.RPCOps
 import net.corda.core.messaging.RPCReturnsObservables
 import net.corda.core.serialization.SerializedBytes
@@ -63,8 +64,15 @@ abstract class RPCDispatcher(val ops: RPCOps, val userService: RPCUserService, v
             // Materializing the observable converts these three kinds of callback into a single stream of objects
             // representing what happened, which is useful for us to send over the wire.
             val subscription = obj.materialize().subscribe { materialised: Notification<out Any> ->
+                val m = if (materialised.throwable is FlowException && materialised.throwable.javaClass != FlowException::class.java) {
+                    // Avoid having to worry about the subtypes of FlowException by converting all of them to just FlowException.
+                    // This is a temporary hack until a proper serialisation mechanism is in place.
+                    Notification.createOnError<Any>(FlowException(materialised.throwable.toString()))
+                } else {
+                    materialised
+                }
                 val newKryo = createRPCKryo(observableSerializer = this@ObservableSerializer)
-                val bits = MarshalledObservation(handle, materialised).serialize(newKryo)
+                val bits = MarshalledObservation(handle, m).serialize(newKryo)
                 rpcLog.debug("RPC sending observation: $materialised")
                 send(bits, toQName)
             }
@@ -76,10 +84,11 @@ abstract class RPCDispatcher(val ops: RPCOps, val userService: RPCUserService, v
 
     fun dispatch(msg: ClientRPCRequestMessage) {
         val (argsBytes, replyTo, observationsTo, methodName) = msg
-        val kryo = createRPCKryo(observableSerializer = if (observationsTo != null) ObservableSerializer(observationsTo) else null)
+        val kryo = createRPCKryo(observableSerializer = observationsTo?.let { ObservableSerializer(it) })
 
         val response: ErrorOr<Any> = ErrorOr.catch {
-            val method = methodTable[methodName] ?: throw RPCException("Received RPC for unknown method $methodName - possible client/server version skew?")
+            val method = methodTable[methodName]
+                    ?: throw RPCException("Received RPC for unknown method $methodName - possible client/server version skew?")
             if (method.isAnnotationPresent(RPCReturnsObservables::class.java) && observationsTo == null)
                 throw RPCException("Received RPC without any destination for observations, but the RPC returns observables")
 
